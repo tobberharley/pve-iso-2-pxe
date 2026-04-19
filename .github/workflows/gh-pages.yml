@@ -54,7 +54,7 @@ jobs:
 
           ISO_NAME="proxmox-ve_${VERSION}.iso"
           ISO_PATH="$WORK_DIR/$ISO_NAME"
-          ISO_URL="https://download.proxmox.com/iso/$ISO_NAME"
+          ISO_URL="https://enterprise.proxmox.com/iso/$ISO_NAME"
 
           echo "Downloading $ISO_URL"
           wget -O "$ISO_PATH" "$ISO_URL"
