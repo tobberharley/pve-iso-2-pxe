@@ -30,46 +30,64 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Pages
+      - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y cpio file zstd gzip genisoimage p7zip-full wget
+          sudo apt-get install -y \
+            cpio \
+            file \
+            zstd \
+            gzip \
+            genisoimage \
+            p7zip-full \
+            wget
 
       - name: Download Proxmox VE ISO
         run: |
           set -euo pipefail
+
           mkdir -p "$WORK_DIR"
+
           ISO_NAME="proxmox-ve_${VERSION}.iso"
           ISO_PATH="$WORK_DIR/$ISO_NAME"
           ISO_URL="https://download.proxmox.com/iso/$ISO_NAME"
 
+          echo "Downloading $ISO_URL"
           wget -O "$ISO_PATH" "$ISO_URL"
+
           echo "ISO_PATH=$ISO_PATH" >> "$GITHUB_ENV"
 
       - name: Run pve-iso-2-pxe.sh
         run: |
           set -euo pipefail
+
           chmod +x ./pve-iso-2-pxe.sh
           bash ./pve-iso-2-pxe.sh "$ISO_PATH"
 
-      - name: Build Pages content
+      - name: Build Pages site
         run: |
           set -euo pipefail
 
           mkdir -p "$SITE_DIR/proxmox/${VERSION}"
+
           cp "$WORK_DIR/pxeboot/linux26" "$SITE_DIR/proxmox/${VERSION}/linux26"
           cp "$WORK_DIR/pxeboot/initrd" "$SITE_DIR/proxmox/${VERSION}/initrd"
 
           touch "$SITE_DIR/.nojekyll"
 
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          BASE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}"
+
           cat > "$SITE_DIR/index.html" <<EOF
           <!doctype html>
-          <html>
+          <html lang="en">
             <head>
               <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
               <title>Proxmox PXE files</title>
             </head>
             <body>
@@ -78,24 +96,42 @@ jobs:
               <ul>
                 <li><a href="./proxmox/${VERSION}/linux26">linux26</a></li>
                 <li><a href="./proxmox/${VERSION}/initrd">initrd</a></li>
+                <li><a href="./proxmox/${VERSION}/pxe-http.cfg">pxe-http.cfg</a></li>
+              </ul>
+              <p>Direct file URLs:</p>
+              <ul>
+                <li><a href="${BASE_URL}/proxmox/${VERSION}/linux26">${BASE_URL}/proxmox/${VERSION}/linux26</a></li>
+                <li><a href="${BASE_URL}/proxmox/${VERSION}/initrd">${BASE_URL}/proxmox/${VERSION}/initrd</a></li>
               </ul>
             </body>
           </html>
           EOF
 
-          cat > "$SITE_DIR/proxmox/${VERSION}/pxe-http.cfg.example" <<EOF
+          cat > "$SITE_DIR/proxmox/${VERSION}/pxe-http.cfg" <<EOF
           label proxmox-install-http
                   menu label Install Proxmox HTTP
-                  linux https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/linux26
-                  initrd https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/initrd
+                  linux ${BASE_URL}/proxmox/${VERSION}/linux26
+                  initrd ${BASE_URL}/proxmox/${VERSION}/initrd
                   append vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent
 
           label proxmox-install-http-debug
                   menu label Install Proxmox HTTP (Debug)
-                  linux https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/linux26
-                  initrd https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/initrd
+                  linux ${BASE_URL}/proxmox/${VERSION}/linux26
+                  initrd ${BASE_URL}/proxmox/${VERSION}/initrd
                   append vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent proxdebug
           EOF
+
+      - name: Verify generated files
+        run: |
+          set -euo pipefail
+
+          find "$SITE_DIR" -maxdepth 4 -type f | sort
+
+          test -f "$SITE_DIR/.nojekyll"
+          test -f "$SITE_DIR/index.html"
+          test -f "$SITE_DIR/proxmox/${VERSION}/linux26"
+          test -f "$SITE_DIR/proxmox/${VERSION}/initrd"
+          test -f "$SITE_DIR/proxmox/${VERSION}/pxe-http.cfg"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -103,11 +139,12 @@ jobs:
           path: ${{ env.SITE_DIR }}
 
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
 
     steps:
       - name: Deploy to GitHub Pages
