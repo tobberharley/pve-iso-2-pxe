@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Proxmox VE version, e.g. 8.4-1 or 6.4-1"
+        description: "Proxmox VE version, e.g. 8.4-1 or 9.1-1"
         required: true
         default: "9.1-1"
 
@@ -54,7 +54,8 @@ jobs:
 
           ISO_NAME="proxmox-ve_${VERSION}.iso"
           ISO_PATH="$WORK_DIR/$ISO_NAME"
-          ISO_URL="https://download.proxmox.com/iso/$ISO_NAME"
+          # https://enterprise.proxmox.com/iso/proxmox-ve_9.1-1.iso
+          ISO_URL="https://enterprise.proxmox.com/iso/$ISO_NAME"
 
           echo "Downloading $ISO_URL"
           wget -O "$ISO_PATH" "$ISO_URL"
