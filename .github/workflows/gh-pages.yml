@@ -54,8 +54,7 @@ jobs:
 
           ISO_NAME="proxmox-ve_${VERSION}.iso"
           ISO_PATH="$WORK_DIR/$ISO_NAME"
-          # https://enterprise.proxmox.com/iso/proxmox-ve_9.1-1.iso
-          ISO_URL="https://enterprise.proxmox.com/iso/$ISO_NAME"
+          ISO_URL="https://download.proxmox.com/iso/$ISO_NAME"
 
           echo "Downloading $ISO_URL"
           wget -O "$ISO_PATH" "$ISO_URL"
@@ -97,12 +96,8 @@ jobs:
               <ul>
                 <li><a href="./proxmox/${VERSION}/linux26">linux26</a></li>
                 <li><a href="./proxmox/${VERSION}/initrd">initrd</a></li>
+                <li><a href="./proxmox/${VERSION}/boot.ipxe">boot.ipxe</a></li>
                 <li><a href="./proxmox/${VERSION}/pxe-http.cfg">pxe-http.cfg</a></li>
-              </ul>
-              <p>Direct file URLs:</p>
-              <ul>
-                <li><a href="${BASE_URL}/proxmox/${VERSION}/linux26">${BASE_URL}/proxmox/${VERSION}/linux26</a></li>
-                <li><a href="${BASE_URL}/proxmox/${VERSION}/initrd">${BASE_URL}/proxmox/${VERSION}/initrd</a></li>
               </ul>
             </body>
           </html>
@@ -122,6 +117,26 @@ jobs:
                   append vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent proxdebug
           EOF
 
+          cat > "$SITE_DIR/proxmox/${VERSION}/boot.ipxe" <<EOF
+          #!ipxe
+
+          set base ${BASE_URL}/proxmox/${VERSION}
+
+          kernel \${base}/linux26 vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent
+          initrd \${base}/initrd
+          boot
+          EOF
+
+          cat > "$SITE_DIR/proxmox/${VERSION}/boot-debug.ipxe" <<EOF
+          #!ipxe
+
+          set base ${BASE_URL}/proxmox/${VERSION}
+
+          kernel \${base}/linux26 vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent proxdebug
+          initrd \${base}/initrd
+          boot
+          EOF
+
       - name: Verify generated files
         run: |
           set -euo pipefail
@@ -132,7 +147,23 @@ jobs:
           test -f "$SITE_DIR/index.html"
           test -f "$SITE_DIR/proxmox/${VERSION}/linux26"
           test -f "$SITE_DIR/proxmox/${VERSION}/initrd"
+          test -f "$SITE_DIR/proxmox/${VERSION}/boot.ipxe"
+          test -f "$SITE_DIR/proxmox/${VERSION}/boot-debug.ipxe"
           test -f "$SITE_DIR/proxmox/${VERSION}/pxe-http.cfg"
+
+      - name: Show final URLs
+        run: |
+          set -euo pipefail
+
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          BASE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}"
+
+          echo "Site root:    $BASE_URL"
+          echo "linux26:      $BASE_URL/proxmox/${VERSION}/linux26"
+          echo "initrd:       $BASE_URL/proxmox/${VERSION}/initrd"
+          echo "boot.ipxe:    $BASE_URL/proxmox/${VERSION}/boot.ipxe"
+          echo "boot-debug:   $BASE_URL/proxmox/${VERSION}/boot-debug.ipxe"
+          echo "pxe-http.cfg: $BASE_URL/proxmox/${VERSION}/pxe-http.cfg"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
