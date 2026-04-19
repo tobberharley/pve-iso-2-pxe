@@ -1,0 +1,115 @@
+name: Publish Proxmox PXE files to GitHub Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Proxmox VE version, e.g. 8.4-1 or 6.4-1"
+        required: true
+        default: "8.4-1"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      VERSION: ${{ inputs.version }}
+      WORK_DIR: ${{ github.workspace }}/downloads
+      SITE_DIR: ${{ github.workspace }}/site
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpio file zstd gzip genisoimage p7zip-full wget
+
+      - name: Download Proxmox VE ISO
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK_DIR"
+          ISO_NAME="proxmox-ve_${VERSION}.iso"
+          ISO_PATH="$WORK_DIR/$ISO_NAME"
+          ISO_URL="https://download.proxmox.com/iso/$ISO_NAME"
+
+          wget -O "$ISO_PATH" "$ISO_URL"
+          echo "ISO_PATH=$ISO_PATH" >> "$GITHUB_ENV"
+
+      - name: Run pve-iso-2-pxe.sh
+        run: |
+          set -euo pipefail
+          chmod +x ./pve-iso-2-pxe.sh
+          bash ./pve-iso-2-pxe.sh "$ISO_PATH"
+
+      - name: Build Pages content
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$SITE_DIR/proxmox/${VERSION}"
+          cp "$WORK_DIR/pxeboot/linux26" "$SITE_DIR/proxmox/${VERSION}/linux26"
+          cp "$WORK_DIR/pxeboot/initrd" "$SITE_DIR/proxmox/${VERSION}/initrd"
+
+          touch "$SITE_DIR/.nojekyll"
+
+          cat > "$SITE_DIR/index.html" <<EOF
+          <!doctype html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Proxmox PXE files</title>
+            </head>
+            <body>
+              <h1>Proxmox PXE files</h1>
+              <p>Published version: ${VERSION}</p>
+              <ul>
+                <li><a href="./proxmox/${VERSION}/linux26">linux26</a></li>
+                <li><a href="./proxmox/${VERSION}/initrd">initrd</a></li>
+              </ul>
+            </body>
+          </html>
+          EOF
+
+          cat > "$SITE_DIR/proxmox/${VERSION}/pxe-http.cfg.example" <<EOF
+          label proxmox-install-http
+                  menu label Install Proxmox HTTP
+                  linux https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/linux26
+                  initrd https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/initrd
+                  append vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent
+
+          label proxmox-install-http-debug
+                  menu label Install Proxmox HTTP (Debug)
+                  linux https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/linux26
+                  initrd https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/proxmox/${VERSION}/initrd
+                  append vga=791 video=vesafb:ywrap,mtrr ramdisk_size=16777216 rw quiet splash=silent proxdebug
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE_DIR }}
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
